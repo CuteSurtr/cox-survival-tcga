@@ -201,11 +201,23 @@ def download_rna_seq(project_id: str, out_dir: Path, limit: int) -> list[Path]:
         fname = hit["file_name"]
         local = out_dir / fname
         if not local.exists() or local.stat().st_size == 0:
-            r = requests.get(GDC_DATA + hit["file_id"], headers=HEADERS, timeout=120)
-            if r.status_code != 200:
+            # Retry on transient network / DNS failures with exponential backoff.
+            ok = False
+            for attempt in range(5):
+                try:
+                    r = requests.get(GDC_DATA + hit["file_id"], headers=HEADERS, timeout=120)
+                    if r.status_code == 200:
+                        local.write_bytes(r.content)
+                        time.sleep(REQUEST_DELAY)
+                        ok = True
+                        break
+                except requests.RequestException as ex:
+                    backoff = min(60, 2 ** attempt)
+                    print(f"  ! {type(ex).__name__} on {fname}; retry {attempt + 1}/5 in {backoff}s", flush=True)
+                    time.sleep(backoff)
+            if not ok:
+                print(f"  ! giving up on {fname}", flush=True)
                 continue
-            local.write_bytes(r.content)
-            time.sleep(REQUEST_DELAY)
         paths.append(local)
     return paths
 

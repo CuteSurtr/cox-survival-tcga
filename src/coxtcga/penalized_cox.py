@@ -77,6 +77,7 @@ class PenalizedCox:
     max_outer_iter: int = 50
     max_inner_iter: int = 200
     tol: float = 1e-6
+    penalty_factor: np.ndarray | None = None  # per-covariate multiplier; 0 = unpenalised
 
     beta_: np.ndarray | None = field(default=None, init=False)
     n_outer_iter_: int = field(default=0, init=False)
@@ -97,7 +98,13 @@ class PenalizedCox:
         t_s = t[order]
         e_s = e[order]
 
-        beta = np.zeros(p)
+        # Accept a warm-start beta via the _warm_start attribute (set by
+        # fit_path to chain down the lambda sequence).
+        warm = getattr(self, "_warm_start", None)
+        if warm is not None and len(warm) == p:
+            beta = np.asarray(warm, dtype=np.float64).copy()
+        else:
+            beta = np.zeros(p)
         self.objective_history_ = []
 
         for it_outer in range(self.max_outer_iter):
@@ -135,6 +142,82 @@ class PenalizedCox:
         if self.beta_ is None:
             raise RuntimeError("fit() before predict")
         return np.asarray(X, dtype=np.float64) @ self.beta_
+
+    # ---------------------------------------------------- lambda-path solver
+
+    @classmethod
+    def lambda_max(cls, X: np.ndarray, durations: np.ndarray, events: np.ndarray, alpha: float = 1.0) -> float:
+        """Smallest lambda at which all coefficients are zero.
+
+        Follows glmnet's construction: compute the Cox score at beta=0 and
+        take the largest absolute value of X'g, divided by alpha. For alpha=1
+        (lasso), this is exactly the entry point of the path.
+        """
+        X = np.asarray(X, dtype=np.float64)
+        t = np.asarray(durations, dtype=np.float64)
+        e = np.asarray(events, dtype=np.float64)
+        order = np.argsort(t, kind="stable")
+        X_s = X[order]
+        t_s = t[order]
+        e_s = e[order]
+        psi = np.zeros(len(t))
+        g, _ = cls._score_and_hessian_diag(psi, t_s, e_s)
+        score_j = X_s.T @ g  # (p,)
+        return float(np.max(np.abs(score_j))) / max(alpha, 1e-12)
+
+    @classmethod
+    def fit_path(
+        cls,
+        X: np.ndarray,
+        durations: np.ndarray,
+        events: np.ndarray,
+        alpha: float = 1.0,
+        n_lambdas: int = 50,
+        lambda_min_ratio: float = 0.01,
+        lambdas: np.ndarray | None = None,
+        penalty_factor: np.ndarray | None = None,
+        max_outer_iter: int = 30,
+        max_inner_iter: int = 300,
+        tol: float = 1e-6,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Fit the full regularisation path using warm starts.
+
+        If ``lambdas`` is provided, fit at those lambdas in the given order
+        (typically descending; warm starts assume the first lambda is large
+        enough that beta = 0 is a good init). Otherwise construct a log-
+        spaced path from ``lambda_max`` down to ``lambda_min_ratio * lambda_max``.
+
+        Returns
+        -------
+        lambdas : ndarray of shape (n_lambdas,)
+        betas   : ndarray of shape (n_lambdas, p)
+        """
+        if lambdas is None:
+            lam_max = cls.lambda_max(X, durations, events, alpha=alpha)
+            log_lams = np.linspace(np.log(lam_max), np.log(lam_max * lambda_min_ratio), n_lambdas)
+            lams = np.exp(log_lams)
+        else:
+            lams = np.asarray(lambdas, dtype=np.float64)
+            n_lambdas = len(lams)
+
+        p = X.shape[1]
+        betas = np.zeros((n_lambdas, p))
+        beta_warm = np.zeros(p)
+        for i, lam in enumerate(lams):
+            model = cls(
+                alpha=alpha,
+                lam=float(lam),
+                penalty_factor=penalty_factor,
+                max_outer_iter=max_outer_iter,
+                max_inner_iter=max_inner_iter,
+                tol=tol,
+            )
+            # Inject warm-start beta via a temporary attribute.
+            model._warm_start = beta_warm.copy()  # type: ignore[attr-defined]
+            model.fit(X, durations, events)
+            betas[i] = model.beta_
+            beta_warm = model.beta_
+        return lams, betas
 
     # ---------------------------------------------- Cox score + Hessian diag
 
@@ -196,23 +279,36 @@ class PenalizedCox:
         w: np.ndarray,
         beta_warm: np.ndarray,
     ) -> np.ndarray:
-        """Cyclic coordinate descent for the weighted-lasso inner problem."""
+        """Cyclic coordinate descent for the weighted-lasso inner problem.
+
+        If ``self.penalty_factor`` is provided, coordinate j's effective
+        penalty is ``lam * alpha * penalty_factor[j]`` for the L1 term and
+        ``lam * (1 - alpha) * penalty_factor[j]`` for the L2 term. Setting
+        penalty_factor[j] = 0 leaves coordinate j unpenalised (standard for
+        clinical covariates in penalised Cox genomic models).
+        """
         n, p = X.shape
         beta = beta_warm.copy()
         resid = z - X @ beta  # current residual
 
         wx2 = (w[:, None] * X ** 2).sum(axis=0)  # (p,) column norms
+        if self.penalty_factor is None:
+            pf = np.ones(p)
+        else:
+            pf = np.asarray(self.penalty_factor, dtype=np.float64)
+            if pf.shape != (p,):
+                raise ValueError(f"penalty_factor must have shape ({p},); got {pf.shape}")
 
         for _ in range(self.max_inner_iter):
             max_change = 0.0
             for j in range(p):
-                # Contribution of coordinate j to the inner product.
                 wjxj = w * X[:, j]
-                # Re-include the current beta_j into the residual.
                 r_no_j = resid + X[:, j] * beta[j]
                 num = float((wjxj * r_no_j).sum())
-                den = wx2[j] + self.lam * (1 - self.alpha) + EPS
-                new_bj = _soft_threshold(num, self.lam * self.alpha) / den
+                l1_j = self.lam * self.alpha * pf[j]
+                l2_j = self.lam * (1 - self.alpha) * pf[j]
+                den = wx2[j] + l2_j + EPS
+                new_bj = _soft_threshold(num, l1_j) / den
                 change = new_bj - beta[j]
                 if change != 0:
                     resid = r_no_j - X[:, j] * new_bj
