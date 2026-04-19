@@ -215,22 +215,42 @@ def load_expression_matrix(
     hits_meta: list[dict],
     value_col: str = "tpm_unstranded",
 ) -> pd.DataFrame:
-    """Parse STAR-Counts gzipped TSVs and assemble a (gene x sample) matrix.
+    """Parse STAR-Counts TSVs and assemble a (gene x sample) matrix.
 
-    GDC STAR-Counts files have a ~6-line header block and repeat pathway
-    aggregate rows (N_unmapped, N_multimapping, etc.) we filter out.
+    GDC STAR-Counts file layout (verified against a downloaded file):
+
+        # gene-model: GENCODE v36
+        gene_id<TAB>gene_name<TAB>gene_type<TAB>unstranded<TAB>...
+        N_unmapped<TAB><TAB><TAB>1784008<TAB>...
+        N_multimapping<TAB>...
+        N_noFeature<TAB>...
+        N_ambiguous<TAB>...
+        ENSG00000000003.15<TAB>TSPAN6<TAB>protein_coding<TAB>2497<TAB>...
+
+    pd.read_csv with ``comment="#"`` drops line 1 so the header is read
+    correctly. We then filter to rows whose gene_id begins with "ENSG".
+    Duplicate gene_name entries (multiple ENSG ids mapping to the same
+    HGNC symbol) are collapsed by summing counts / averaging expression.
     """
     hits_by_name = {h["file_name"]: h for h in hits_meta}
     cols: dict[str, pd.Series] = {}
     for p in paths:
-        df = pd.read_csv(p, sep="\t", comment="#", skiprows=1, low_memory=False)
-        df = df[df["gene_id"].str.startswith("ENSG")]
-        df = df.set_index("gene_name" if "gene_name" in df.columns else "gene_id")
-        # Collapse duplicate gene symbols by summing counts / averaging TPM.
-        values = df[value_col].groupby(df.index).sum()
-        # Map filename -> submitter_id.
+        df = pd.read_csv(p, sep="\t", comment="#", low_memory=False)
+        df = df[df["gene_id"].astype(str).str.startswith("ENSG")].copy()
+        if value_col not in df.columns:
+            raise ValueError(
+                f"{p.name}: expected column {value_col!r} not in {list(df.columns)}"
+            )
+        df[value_col] = pd.to_numeric(df[value_col], errors="coerce")
+        gene_label = "gene_name" if "gene_name" in df.columns else "gene_id"
+        values = df.set_index(gene_label)[value_col]
+        # For TPM / FPKM: average across duplicate symbols (preserves scale).
+        # For raw counts: sum.
+        if value_col in ("tpm_unstranded", "fpkm_unstranded", "fpkm_uq_unstranded"):
+            values = values.groupby(level=0).mean()
+        else:
+            values = values.groupby(level=0).sum()
         meta = hits_by_name.get(p.name)
         sid = meta["cases"][0]["submitter_id"] if meta else p.stem
         cols[sid] = values
-    M = pd.DataFrame(cols)
-    return M
+    return pd.DataFrame(cols).dropna(how="all")

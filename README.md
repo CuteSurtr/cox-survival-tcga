@@ -13,7 +13,7 @@ Genomic Data Commons (GDC) API.
 
 ---
 
-## First real-data result: TCGA-LUAD
+## Phase 1 result: clinical-only Cox on TCGA-LUAD
 
 Fitting Cox PH with `age + sex + AJCC stage` on 376 lung-adenocarcinoma
 cases with usable overall-survival times:
@@ -43,6 +43,73 @@ python scripts/run_survival.py  # full pipeline on TCGA-LUAD
 ```
 
 ---
+
+## Phase 2 result: adding RNA-seq expression (and why the naive gain is an illusion)
+
+Fitting a multivariate Cox model with age + sex + stage + top-10
+univariately-screened genes on 77 TCGA-LUAD patients with both clinical
+and RNA-seq TPM-expression data:
+
+| Model | Evaluation | c-index |
+|---|---|---|
+| clinical only (age + sex + stage) | in-sample | 0.597 |
+| clinical + top-10 genes | in-sample | **0.924** |
+| clinical only | 5-fold CV | 0.597 |
+| clinical + top-10 genes (genes picked on _all_ data) | 5-fold CV | **0.806** *(leaky)* |
+| clinical + genes, per-fold gene re-selection | **5-fold nested CV** | **0.580** |
+
+> The leaky CV number (0.806) is a classic trap: when we use the full
+> dataset to pick genes *and* to cross-validate, genes that happened to
+> correlate with survival in our 77 patients score well on held-out
+> folds even when they carry no real signal. Running the univariate
+> screen *inside* each fold (nested CV) gives the honest estimate of
+> **0.580 — worse than clinical alone**. With n = 77 and ~20 000 genes,
+> the univariate-then-fit-top-k procedure overfits harder than it
+> predicts.
+
+This is **the correct scientific conclusion at this sample size**: small
+cohorts with wide feature matrices need regularisation. Phase 3 (penalised
+Cox; see below) is the right tool.
+
+The top-10 univariately-prognostic genes in this cohort:
+`PTTG1, PPP1R3G, PLEK2, GADD45A, LDHA, HS3ST2, ATF7IP2, PTHLH, HMGB2, RRM1`.
+
+Some of these are known LUAD prognostic markers:
+
+- **PTTG1** (Securin) -- well-established proliferation / aneuploidy driver in multiple tumor types.
+- **LDHA** -- Warburg-effect / aerobic glycolysis, increased in aggressive NSCLC.
+- **RRM1** -- ribonucleotide reductase; one of the classic LUAD prognostic markers and a predictor of response to gemcitabine.
+- **GADD45A** -- DNA damage response; reduced expression permits genomic instability.
+
+The Kaplan-Meier split at the median of PTTG1 log2(TPM+1) gives a
+log-rank p = 4.2e-04 -- see `figures/TCGA-LUAD_top_gene_km.png`.
+
+### Methodology notes
+
+- Expression was downloaded from GDC as STAR-Counts TPM ("tpm_unstranded"),
+  log2(TPM + 1) transformed, and z-scored before fitting.
+- Low-expression genes (TPM < 1 in >=75% of samples) are filtered to
+  reduce multiple-testing burden.
+- BH-FDR is applied but at n = 77 with ~20 k tested genes, power is too
+  low for any individual gene to survive q < 0.05 -- that's why we rely on
+  top-k selection + CV rather than FDR-significant gene lists.
+- **Nested CV** re-runs the univariate screen inside each training fold
+  and picks its own top-k, which removes the selection-bias leak that
+  inflates a simple CV estimate.
+
+### Penalised Cox (glmnet-style)
+
+`src/coxtcga/penalized_cox.py` implements L1 / elastic-net penalised Cox
+regression via coordinate descent on the IRLS quadratic approximation to
+the log partial likelihood (Simon et al. 2011). For each coordinate j:
+
+    beta_j <- soft_threshold( sum_i w_i x_ij (z_i - sum_{k != j} x_ik beta_k),  lambda * alpha )
+              / ( sum_i w_i x_ij^2  +  lambda * (1 - alpha) )
+
+where (z_i, w_i) are the pseudo-response and weight from the Cox IRLS
+derivation. Validated with 4 tests (unpenalised matches MLE, large lambda
+zeroes everything, sparse truth recovered in top active set, neighbouring
+lambdas give close solutions).
 
 ## The math
 
