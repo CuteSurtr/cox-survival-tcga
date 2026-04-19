@@ -32,17 +32,30 @@ REQUEST_DELAY = 0.3
 # ----------------------------------------------------------------- clinical
 
 def fetch_clinical_tsv(project_id: str, out_path: Path) -> Path:
-    """Download the clinical TSV for a TCGA project via the GDC clinical endpoint.
+    """Download the clinical TSV for a TCGA project via the GDC API.
 
-    Returns a DataFrame indexed by submitter_id (TCGA-XX-XXXX). Each row has
-    survival fields usable directly in Cox / KM analyses.
+    Tries the bulk clinical_analysis/TSV endpoint first; falls back to the
+    per-case /cases endpoint if the bulk response isn't a parseable TSV with
+    the columns we need.
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    if out_path.exists() and out_path.stat().st_size > 1024:
-        return out_path
 
-    # Use the GDC bulk-clinical TSV endpoint rather than per-case queries.
+    # Only reuse a cached file if it actually has our expected columns.
+    if out_path.exists() and out_path.stat().st_size > 1024:
+        try:
+            df_probe = pd.read_csv(out_path, sep="\t", nrows=5, low_memory=False)
+            has_any = any(
+                c in df_probe.columns
+                for c in ("submitter_id", "case_submitter_id", "vital_status")
+            )
+            if has_any:
+                return out_path
+        except Exception:
+            pass
+        # Bad cached file — remove and refetch via fallback.
+        out_path.unlink(missing_ok=True)
+
     url = "https://api.gdc.cancer.gov/clinical_analysis/TSV"
     payload = {
         "filters": {
@@ -50,9 +63,12 @@ def fetch_clinical_tsv(project_id: str, out_path: Path) -> Path:
             "content": {"field": "cases.project.project_id", "value": [project_id]},
         },
     }
-    r = requests.post(url, json=payload, headers=HEADERS, timeout=120)
-    if r.status_code != 200:
-        # Fallback: /files search with clinical supplement filter, then download each.
+    try:
+        r = requests.post(url, json=payload, headers=HEADERS, timeout=120)
+        ok = r.status_code == 200 and b"submitter_id" in r.content[:2048]
+    except requests.RequestException:
+        ok = False
+    if not ok:
         return _fallback_clinical(project_id, out_path)
     out_path.write_bytes(r.content)
     time.sleep(REQUEST_DELAY)

@@ -244,12 +244,18 @@ def cross_project_eval(
     print(f"{target_project}: {missing} of {len(luad_fit['gene_index'])} training genes missing")
 
     log_E = np.log2(E.loc[luad_genes] + 1.0)
-    # Fill missing genes with training-set means (so the standardised value is 0).
+    # Fill missing genes with the *training* mean so that after applying
+    # LUAD's standardisation (x - mu)/sd, the contribution is exactly zero
+    # instead of -mu/sd (the default-fill-with-0 bug).
+    n_clin = len(luad_fit["clinical_covs"])
+    training_gene_means = luad_fit["standardise_mean"][n_clin:]
     full_gene_df = pd.DataFrame(
         index=luad_fit["gene_index"],
         columns=clin["submitter_id"],
-        data=0.0,
+        dtype=float,
     )
+    for i, g in enumerate(luad_fit["gene_index"]):
+        full_gene_df.loc[g] = float(training_gene_means[i])
     full_gene_df.loc[luad_genes] = log_E[clin["submitter_id"]].values
 
     clin_df, clin_covs = prepare_design_matrix(clin)

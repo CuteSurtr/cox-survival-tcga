@@ -157,6 +157,30 @@ regularised genomics predictors are supposed to deliver: no improvement from
 naive screening at small n, but real lift once the penalty selects the
 signal.
 
+### Cross-project validation: the LUAD signature does NOT transfer to LUSC
+
+Applying the lasso-Cox model fit on TCGA-LUAD (lung adenocarcinoma)
+directly to 33 TCGA-LUSC (lung squamous-cell) patients yields a
+**transfer c-index of 0.463** -- slightly *worse* than random (0.50).
+
+This is biologically consistent and a useful negative result:
+
+- LUAD and LUSC are molecularly distinct tumor types. LUAD is driven by
+  EGFR, KRAS and adeno-differentiation programs; LUSC is dominated by
+  TP53 / CDKN2A loss, SOX2 amplification, and keratinising squamous
+  programs.
+- Several of the LUAD-selected genes (CEACAM5, SCGB1A1, BPIFB1) are
+  adenocarcinoma-enriched markers; their prognostic direction can flip
+  or disappear in squamous tumors.
+- A transfer c-index < 0.5 with a small test set is still within the
+  wide confidence band around "no signal", but it cleanly rules out the
+  optimistic "pan-NSCLC prognostic signature" interpretation.
+
+This negative result motivates **tumor-type-specific** prognostic models
+(or a shared-parameter multi-task Cox) rather than a single LUAD signature
+applied across NSCLC. See `coxtcga.phase3.cross_project_eval` for the
+transfer-evaluation code.
+
 ## The math
 
 Let subject `i` have observation `(t_i, delta_i, x_i)` where `t_i` is the
