@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+
+# Raw GDC downloads: reproducible, large.
+data/raw/
+references/pdfs/
+references/cache/
+
+# Ignore figures by default, then allowlist committed artifacts.
+figures/*.png
+figures/*.pdf
+!figures/.gitkeep
+!figures/TCGA-LUAD_*.png

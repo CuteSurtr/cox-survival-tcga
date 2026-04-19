@@ -1,0 +1,251 @@
+# Curated bibliography for cox-survival-tcga.
+#
+# Open-access papers + theses + API searches on Cox PH, penalised Cox,
+# deep survival analysis, and cancer prognostic modelling.
+#
+# Entry kinds:
+#   pdf          -- direct PDF URL (arXiv, bioRxiv, proceedings, personal page)
+#   pmc          -- fetch OA PDF via Europe PMC given a PMC id
+#   landing_page -- record URL only (paywalled / needs institutional access)
+#
+# Dynamic searches: engine in {arxiv, europepmc}.
+
+theses:
+  - id: harvard_biostat_dissertations
+    author: "various"
+    year: null
+    title: "Harvard T.H. Chan School of Public Health Biostatistics dissertations"
+    institution: "Harvard University"
+    url: "https://hsph.harvard.edu/department/biostatistics/dissertations/"
+    kind: landing_page
+    fetch: false
+    notes: >
+      Index page listing Cox / survival dissertations such as Zhao (2012)
+      "Survival Analysis with High-Dimensional Covariates with Applications
+      to Cancer Genomics" and Liang "The Proportional Hazards Model and
+      Interval-Censored Data". Full PDFs via Harvard DASH require
+      institutional login.
+
+  - id: dart_europe_theses
+    author: "various"
+    year: null
+    title: "DART-Europe open theses aggregator"
+    institution: "European university consortium"
+    url: "https://www.dart-europe.org/basic-search.php?query=cox+proportional+hazards+cancer"
+    kind: landing_page
+    fetch: false
+    notes: >
+      Search entry point for open European PhD theses on Cox / survival /
+      cancer. Individual thesis URLs vary by institution and should be added
+      as specific entries as they are found.
+
+papers:
+  - id: coxsage_2025
+    author: "Cox-Sage authors"
+    year: 2025
+    title: "Cox-Sage: enhancing Cox proportional hazards model with interpretable graph neural networks for cancer prognosis"
+    venue: "Briefings in Bioinformatics"
+    pmcid: "PMC11894944"
+    kind: pmc
+    fetch: true
+    notes: >
+      Graph-neural-network Cox extension with interpretability. Directly
+      relevant for extending this project beyond linear Cox.
+
+  - id: coxmos_2025
+    author: "Ortiz-Barahona et al."
+    year: 2025
+    title: "Coxmos: Interpretable survival models for high-dimensional and multi-omic data"
+    venue: "bioRxiv"
+    biorxiv_doi: "10.1101/2025.10.01.679727"
+    url: "https://www.biorxiv.org/content/10.1101/2025.10.01.679727v2.full.pdf"
+    kind: pdf
+    fetch: true
+    notes: >
+      Adapted Cox regression for high-dimensional and multi-block data with
+      PLS-based variable selection. R package on CRAN.
+
+  - id: rcoxnet_2024
+    author: "RCoxNet authors"
+    year: 2024
+    title: "RCoxNet: deep learning framework for enhanced cancer prognosis"
+    venue: "bioRxiv"
+    biorxiv_doi: "10.1101/2024.09.17.613428"
+    url: "https://www.biorxiv.org/content/10.1101/2024.09.17.613428v1.full.pdf"
+    kind: pdf
+    fetch: true
+    notes: >
+      Deep Cox on TCGA mutation data. Architectural complement to our linear
+      baseline -- future Project 14 extension.
+
+  - id: highdim_cox_2014
+    author: "Mittal et al."
+    year: 2014
+    title: "High-dimensional, massive sample-size Cox proportional hazards regression for survival analysis"
+    venue: "Biostatistics"
+    pmcid: "PMC3944969"
+    kind: pmc
+    fetch: true
+    notes: >
+      Scalable Cox MLE for millions of subjects and thousands of covariates.
+      Implementation techniques carry over to our Newton-Raphson solver.
+
+  - id: netreg_cox_2015
+    author: "Zhang et al."
+    year: 2015
+    title: "Network-regularized high-dimensional Cox regression for analysis of genomic data"
+    venue: "Statistica Sinica"
+    pmcid: "PMC4549005"
+    kind: pmc
+    fetch: true
+    notes: >
+      L1 + Laplacian penalty on Cox betas using prior network structure
+      (e.g. PPI). Relevant if we extend to expression-based signatures.
+
+  - id: online_cox_2023
+    author: "Tarkhan & Simon"
+    year: 2023
+    title: "An online framework for survival analysis: reframing Cox proportional hazards for large data sets and neural networks"
+    venue: "Bioinformatics Advances"
+    pmcid: "PMC10724274"
+    kind: pmc
+    fetch: true
+    notes: >
+      Online / mini-batch reformulation of Cox PL -- relevant once expression
+      features push the design matrix into p >> n territory.
+
+  - id: deephit_2018
+    author: "Lee et al."
+    year: 2018
+    title: "DeepHit: A deep learning approach to survival analysis with competing risks"
+    venue: "AAAI"
+    url: "https://cdn.aaai.org/ojs/11842/11842-13-15370-1-2-20201228.pdf"
+    kind: pdf
+    fetch: true
+    notes: >
+      Discrete-time deep survival with competing risks. Classic DL-survival
+      reference. Not proportional-hazards.
+
+  - id: deep_cox_mixtures_2021
+    author: "Nagpal, Yadlowsky et al."
+    year: 2021
+    title: "Deep Cox Mixtures for survival regression"
+    venue: "MLHC 2021"
+    url: "https://proceedings.mlr.press/v149/nagpal21a/nagpal21a.pdf"
+    kind: pdf
+    fetch: true
+    notes: >
+      Relaxes proportional-hazards via latent-cluster Cox mixtures. Open
+      direction to explore when PH assumption is violated.
+
+  - id: dysurv_2023
+    author: "DySurv authors"
+    year: 2023
+    title: "DySurv: dynamic deep learning model for survival prediction"
+    venue: "arXiv:2310.18681"
+    url: "https://arxiv.org/pdf/2310.18681"
+    kind: pdf
+    fetch: true
+
+  - id: survival_dl_review_2024
+    author: "Survival-modelling review authors"
+    year: 2024
+    title: "Survival modeling using deep learning, machine learning and statistical methods: a comparative analysis"
+    venue: "arXiv:2403.06999"
+    url: "https://arxiv.org/pdf/2403.06999"
+    kind: pdf
+    fetch: true
+
+  - id: intro_deep_survival_2024
+    author: "Wiegrebe et al."
+    year: 2024
+    title: "An introduction to deep survival analysis models for predicting time-to-event outcomes"
+    venue: "arXiv:2410.01086"
+    url: "https://arxiv.org/pdf/2410.01086"
+    kind: pdf
+    fetch: true
+    notes: >
+      Tutorial-style review. Good companion text while self-studying
+      survival analysis.
+
+  - id: deep_recurrent_survival_2018
+    author: "Ren et al."
+    year: 2018
+    title: "Deep recurrent survival analysis"
+    venue: "arXiv:1809.02403"
+    url: "https://arxiv.org/pdf/1809.02403"
+    kind: pdf
+    fetch: true
+
+  - id: deep_survival_multimodal_2025
+    author: "Deep Survival Multimodal authors"
+    year: 2025
+    title: "Deep survival analysis in multimodal medical data"
+    venue: "arXiv:2507.07804"
+    url: "https://arxiv.org/pdf/2507.07804"
+    kind: pdf
+    fetch: true
+
+  - id: simon_coxnet_2011
+    author: "Simon, Friedman, Hastie, Tibshirani"
+    year: 2011
+    title: "Regularization paths for Cox's proportional hazards model via coordinate descent"
+    venue: "Journal of Statistical Software"
+    url: "http://faculty.washington.edu/nrsimon/CoxNet.pdf"
+    kind: pdf
+    fetch: true
+    notes: >
+      The paper behind glmnet's Coxnet. Mathematical derivation of
+      coordinate descent for L1 / elastic-net Cox.
+
+  - id: glmnet_coxnet_vignette
+    author: "Tay, Simon, Friedman, Hastie"
+    year: 2022
+    title: "Regularized Cox regression (glmnet vignette)"
+    venue: "CRAN"
+    url: "https://cran.r-project.org/web/packages/glmnet/vignettes/Coxnet.pdf"
+    kind: pdf
+    fetch: true
+    notes: >
+      Practical how-to for penalised Cox in R. Reference when moving from
+      our Phase 1 Newton-Raphson to Phase 2 penalised high-dim Cox.
+
+  - id: stanford_lutian_survival
+    author: "Lu Tian"
+    year: null
+    title: "Survival analysis course notes (Stanford)"
+    venue: "Stanford"
+    url: "https://web.stanford.edu/~lutian/coursepdf/slideweek1.pdf"
+    kind: pdf
+    fetch: true
+    notes: >
+      Week 1 slides of the Stanford survival-analysis course. Covers Cox,
+      KM, and competing risks. Useful study companion.
+
+  - id: princeton_imai_survival
+    author: "Kosuke Imai"
+    year: null
+    title: "Survival Data Analysis (Princeton / Harvard lecture notes)"
+    venue: "Princeton"
+    url: "https://imai.fas.harvard.edu/teaching/files/survival.pdf"
+    kind: pdf
+    fetch: true
+    notes: >
+      Compact lecture handout on survival analysis with the math worked out
+      from first principles.
+
+searches:
+  - id: europepmc_cox_prognosis
+    engine: europepmc
+    query: 'Cox proportional hazards AND TCGA AND (prognostic OR signature)'
+    max_results: 15
+
+  - id: arxiv_deep_survival
+    engine: arxiv
+    query: 'abs:"survival analysis" AND abs:"deep learning"'
+    max_results: 15
+
+  - id: arxiv_penalized_cox
+    engine: arxiv
+    query: 'abs:Cox AND abs:"proportional hazards" AND (abs:lasso OR abs:"elastic net" OR abs:penalized)'
+    max_results: 10

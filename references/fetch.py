@@ -1,0 +1,302 @@
+"""Fetch open-access theses + papers referenced by this project.
+
+Reads `references/queries.yaml`, downloads each entry marked ``fetch: true``,
+runs the listed API searches, and writes ``references/BIBLIOGRAPHY.md``.
+
+Sources handled:
+
+  * kind: pdf          -- direct PDF URL (thesis, bioRxiv PDF, NeurIPS PDF)
+  * kind: pmc          -- fetch OA PDF via Europe PMC REST API given a PMC id
+  * kind: landing_page -- record the URL but do not download
+  * engine: arxiv      -- arXiv API search (returns metadata + PDF URLs)
+  * engine: europepmc  -- Europe PMC search API
+
+All downloads are cached in ``references/pdfs/``. Re-running is idempotent.
+Respects a 0.5s delay between requests to each host.
+
+Usage
+-----
+    python references/fetch.py              # fetch all
+    python references/fetch.py --dry-run    # print what would be fetched
+    python references/fetch.py --only theses  # limit to one section
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import time
+import xml.etree.ElementTree as ET
+from pathlib import Path
+from urllib.parse import quote_plus
+
+import requests
+import yaml
+
+
+REF_DIR = Path(__file__).parent
+PDF_DIR = REF_DIR / "pdfs"
+CACHE_DIR = REF_DIR / "cache"
+BIB_PATH = REF_DIR / "BIBLIOGRAPHY.md"
+QUERIES_PATH = REF_DIR / "queries.yaml"
+
+HEADERS = {
+    "User-Agent": "mutation-signatures-nmf/0.1 (+research, contact via GitHub)",
+    "Accept": "application/pdf,application/xml,application/json,*/*",
+}
+REQUEST_DELAY = 0.5  # be polite
+
+
+# --------------------------------------------------------------------- helpers
+
+def _safe_slug(s: str, n: int = 80) -> str:
+    keep = [c if c.isalnum() or c in "-_." else "_" for c in s]
+    return "".join(keep)[:n].strip("_")
+
+
+def _download(url: str, out_path: Path, *, expect_pdf: bool = True) -> bool:
+    if out_path.exists() and out_path.stat().st_size > 1024:
+        return True
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=30, allow_redirects=True)
+    except requests.RequestException as e:
+        print(f"  ! download failed: {e}")
+        return False
+    if resp.status_code != 200:
+        print(f"  ! HTTP {resp.status_code} from {url}")
+        return False
+    if expect_pdf and b"%PDF" not in resp.content[:8]:
+        print(f"  ! response is not a PDF (first bytes: {resp.content[:16]!r})")
+        return False
+    out_path.write_bytes(resp.content)
+    print(f"  + saved {out_path.name} ({len(resp.content) / 1024:.0f} KB)")
+    time.sleep(REQUEST_DELAY)
+    return True
+
+
+def _cached_get(url: str, *, key: str) -> str | None:
+    cache_path = CACHE_DIR / f"{key}.cache"
+    if cache_path.exists():
+        return cache_path.read_text(encoding="utf-8")
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=30)
+    except requests.RequestException as e:
+        print(f"  ! API request failed: {e}")
+        return None
+    if resp.status_code != 200:
+        print(f"  ! API HTTP {resp.status_code}: {url}")
+        return None
+    text = resp.text
+    cache_path.write_text(text, encoding="utf-8")
+    time.sleep(REQUEST_DELAY)
+    return text
+
+
+# ---------------------------------------------------------------- PMC fetching
+
+def _fetch_pmc_oa(pmcid: str, entry_id: str) -> Path | None:
+    """Use Europe PMC OA-fulltext endpoint to get a PDF for a PMC id."""
+    pmcid = pmcid.lstrip("PMC")
+    url = f"https://europepmc.org/backend/ptpmcrender.fcgi?accid=PMC{pmcid}&blobtype=pdf"
+    out = PDF_DIR / f"{entry_id}.pdf"
+    if _download(url, out, expect_pdf=True):
+        return out
+
+    # Fallback: NCBI PMC direct PDF (may or may not be permitted depending on OA status).
+    ncbi_url = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmcid}/pdf/"
+    if _download(ncbi_url, out, expect_pdf=True):
+        return out
+    return None
+
+
+# ------------------------------------------------------------- arXiv searching
+
+def _search_arxiv(query: str, max_results: int) -> list[dict]:
+    url = (
+        "http://export.arxiv.org/api/query?"
+        f"search_query={quote_plus(query)}&max_results={max_results}"
+        "&sortBy=submittedDate&sortOrder=descending"
+    )
+    text = _cached_get(url, key=f"arxiv_{hashlib.md5(query.encode()).hexdigest()[:10]}")
+    if text is None:
+        return []
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    root = ET.fromstring(text)
+    hits = []
+    for entry in root.findall("atom:entry", ns):
+        title = (entry.findtext("atom:title", default="", namespaces=ns) or "").strip()
+        summary = (entry.findtext("atom:summary", default="", namespaces=ns) or "").strip()
+        published = entry.findtext("atom:published", default="", namespaces=ns)
+        arxiv_id = entry.findtext("atom:id", default="", namespaces=ns).rsplit("/", 1)[-1]
+        authors = [
+            a.findtext("atom:name", default="", namespaces=ns)
+            for a in entry.findall("atom:author", ns)
+        ]
+        pdf_link = None
+        for link in entry.findall("atom:link", ns):
+            if link.get("title") == "pdf":
+                pdf_link = link.get("href")
+                break
+        hits.append({
+            "id": arxiv_id,
+            "title": title,
+            "authors": authors,
+            "published": published,
+            "summary": summary[:500],
+            "pdf": pdf_link,
+        })
+    return hits
+
+
+# ---------------------------------------------------------- Europe PMC search
+
+def _search_europepmc(query: str, max_results: int) -> list[dict]:
+    url = (
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+        f"?query={quote_plus(query)}&format=json&pageSize={max_results}"
+        "&resultType=core"
+    )
+    text = _cached_get(url, key=f"epmc_{hashlib.md5(query.encode()).hexdigest()[:10]}")
+    if text is None:
+        return []
+    data = json.loads(text)
+    hits = []
+    for r in data.get("resultList", {}).get("result", []):
+        hits.append({
+            "id": r.get("id"),
+            "title": r.get("title", ""),
+            "authors": r.get("authorString", ""),
+            "year": r.get("pubYear", ""),
+            "journal": r.get("journalTitle", ""),
+            "doi": r.get("doi", ""),
+            "pmcid": r.get("pmcid", ""),
+            "isOpenAccess": r.get("isOpenAccess", "N") == "Y",
+        })
+    return hits
+
+
+# ----------------------------------------------------------- bibliography gen
+
+def _best_source_url(e: dict) -> str:
+    if e.get("url"):
+        return e["url"]
+    if e.get("pdf"):
+        return e["pdf"]
+    if e.get("pmcid"):
+        return f"https://europepmc.org/article/PMC/{e['pmcid']}"
+    if e.get("doi"):
+        return f"https://doi.org/{e['doi']}"
+    return ""
+
+
+def _render_bibliography(entries_by_section: dict[str, list[dict]]) -> str:
+    lines = ["# Bibliography", "", "Auto-generated by `references/fetch.py`. Do not edit by hand.", ""]
+    for section, entries in entries_by_section.items():
+        lines.append(f"## {section.capitalize()}")
+        lines.append("")
+        if not entries:
+            lines.append("_(none yet — run `python references/fetch.py` to populate)_")
+            lines.append("")
+            continue
+        for e in entries:
+            title = e.get("title", "(no title)")
+            author = e.get("author") or e.get("authors") or ""
+            year = e.get("year", "")
+            venue = e.get("venue") or e.get("journal") or e.get("institution") or ""
+            url = _best_source_url(e)
+            local = e.get("local_pdf", "")
+            bits = [f"**{title}**"]
+            if author:
+                bits.append(str(author))
+            if year:
+                bits.append(str(year))
+            if venue:
+                bits.append(f"*{venue}*")
+            lines.append("- " + " — ".join(bits))
+            if url:
+                lines.append(f"  - source: [{url}]({url})")
+            if local:
+                lines.append(f"  - local: `{local}`")
+            if e.get("notes"):
+                lines.append(f"  - _{e['notes'].strip()}_")
+            lines.append("")
+    return "\n".join(lines)
+
+
+# ----------------------------------------------------------------------- main
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--only", choices=["theses", "papers", "searches"], default=None)
+    args = parser.parse_args()
+
+    with QUERIES_PATH.open(encoding="utf-8") as f:
+        spec = yaml.safe_load(f)
+
+    PDF_DIR.mkdir(parents=True, exist_ok=True)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    results: dict[str, list[dict]] = {"theses": [], "papers": [], "searches": []}
+
+    # ---- theses
+    if args.only in (None, "theses"):
+        for e in spec.get("theses", []):
+            if not e.get("fetch") or args.dry_run:
+                results["theses"].append(e)
+                continue
+            print(f"[thesis] {e['id']}")
+            out = PDF_DIR / f"{e['id']}.pdf"
+            if _download(e["url"], out):
+                e["local_pdf"] = str(out.relative_to(REF_DIR))
+            results["theses"].append(e)
+
+    # ---- papers
+    if args.only in (None, "papers"):
+        for e in spec.get("papers", []):
+            if args.dry_run or not e.get("fetch"):
+                results["papers"].append(e)
+                continue
+            print(f"[paper]  {e['id']}")
+            local = None
+            if e["kind"] == "pdf":
+                out = PDF_DIR / f"{e['id']}.pdf"
+                if _download(e["url"], out):
+                    local = out
+            elif e["kind"] == "pmc" and e.get("pmcid"):
+                local = _fetch_pmc_oa(e["pmcid"], e["id"])
+            if local:
+                e["local_pdf"] = str(local.relative_to(REF_DIR))
+            results["papers"].append(e)
+
+    # ---- searches
+    if args.only in (None, "searches"):
+        for s in spec.get("searches", []):
+            print(f"[search] {s['id']} ({s['engine']})")
+            if s["engine"] == "arxiv":
+                hits = _search_arxiv(s["query"], s.get("max_results", 10))
+            elif s["engine"] == "europepmc":
+                hits = _search_europepmc(s["query"], s.get("max_results", 10))
+            else:
+                print(f"  ! unknown engine: {s['engine']}")
+                continue
+            s["hits"] = hits
+            for h in hits[:5]:
+                results["searches"].append({
+                    "title": h.get("title", ""),
+                    "authors": h.get("authors", ""),
+                    "year": h.get("year") or (h.get("published", "")[:4]),
+                    "journal": h.get("journal", ""),
+                    "url": h.get("pdf") or (f"https://europepmc.org/article/MED/{h.get('id')}" if h.get("id") else ""),
+                    "notes": f"via {s['engine']} query: {s['query']!r}",
+                })
+
+    bib = _render_bibliography(results)
+    BIB_PATH.write_text(bib, encoding="utf-8")
+    print(f"\nwrote {BIB_PATH.relative_to(REF_DIR.parent)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
