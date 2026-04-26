@@ -4,11 +4,11 @@ Curated open-access literature for the mutation-signatures NMF project.
 
 ## Contents
 
-- `queries.yaml` — human-editable list of theses, papers, and API searches
-- `fetch.py`     — downloader + auto-generated bibliography builder
-- `pdfs/`        — downloaded PDFs (git-ignored; reproducible from fetch)
-- `cache/`       — cached API responses (git-ignored)
-- `BIBLIOGRAPHY.md` — generated index with source links + local file paths
+- `queries.yaml` -- human-editable list of theses, papers, and API searches
+- `fetch.py`     -- downloader + auto-generated bibliography builder
+- `pdfs/`        -- downloaded PDFs (git-ignored; reproducible from fetch)
+- `cache/`       -- cached API responses (git-ignored)
+- `BIBLIOGRAPHY.md` -- generated index with source links + local file paths
 
 ## Usage
 
@@ -55,7 +55,7 @@ etc.), link directly to the PDF URL.
 The Wellcome Sanger Institute thesis collection is a goldmine for
 mutation-signatures-related PhDs:
 
-- Cambridge Apollo — Sanger Institute collection:
+- Cambridge Apollo -- Sanger Institute collection:
   https://www.repository.cam.ac.uk/collections/54880bf5-8828-4525-a20d-9c5a4d5c5cff
 
 Other repositories worth browsing:

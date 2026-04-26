@@ -5,6 +5,14 @@ the **Kaplan-Meier estimator**, the **log-rank test**, and **Harrell's
 concordance index**, applied to TCGA clinical data pulled live from the
 Genomic Data Commons (GDC) API.
 
+**Tests:** 17 passing in ~6 s. **License:** MIT.
+
+![Kaplan-Meier by stage](figures/TCGA-LUAD_km_by_stage.png)
+
+![Forest plot](figures/TCGA-LUAD_forest.png)
+
+![Lasso path](figures/TCGA-LUAD_lasso_path.png)
+
 > **Portfolio framing.** This project demonstrates competence in
 > (a) mathematical statistics (partial likelihood, Newton-Raphson, Fisher
 > information), (b) survival analysis (censoring, risk sets, ties, baseline
@@ -31,7 +39,7 @@ cases with usable overall-survival times:
 
 The monotone stage -> hazard relationship and the non-significant age/sex
 effects reproduce well-known LUAD prognostic findings. The Kaplan-Meier
-curves split cleanly by stage — see `figures/TCGA-LUAD_km_by_stage.png`
+curves split cleanly by stage -- see `figures/TCGA-LUAD_km_by_stage.png`
 and the hazard-ratio forest plot at `figures/TCGA-LUAD_forest.png`.
 
 Reproduce with:
@@ -63,7 +71,7 @@ and RNA-seq TPM-expression data:
 > correlate with survival in our 77 patients score well on held-out
 > folds even when they carry no real signal. Running the univariate
 > screen *inside* each fold (nested CV) gives the honest estimate of
-> **0.580 — worse than clinical alone**. With n = 77 and ~20 000 genes,
+> **0.580 -- worse than clinical alone**. With n = 77 and ~20 000 genes,
 > the univariate-then-fit-top-k procedure overfits harder than it
 > predicts.
 
@@ -152,7 +160,7 @@ See `figures/TCGA-LUAD_lasso_path.png` for the CV-c-index-vs-lambda curve
 | clinical + top-10 univariate (nested CV, Phase 2) | 0.580 |
 | **clinical (unpenalised) + lasso-selected genes (Phase 3)** | **0.731** |
 
-The Phase 1 → Phase 3 jump (0.597 → 0.731) is the exact shape of the result
+The Phase 1 -> Phase 3 jump (0.597 -> 0.731) is the exact shape of the result
 regularised genomics predictors are supposed to deliver: no improvement from
 naive screening at small n, but real lift once the penalty selects the
 signal.
@@ -234,7 +242,7 @@ We implement **Breslow's approximation** (the most common choice; also R's
 default when `method = "breslow"`). Compared to Efron's approximation
 (lifelines' default), Breslow diverges by O(ties^2 / n), which is negligible
 for data with few ties and bounded by ~0.05 in coefficients under heavy
-tying — see `tests/test_coxph.py::test_coxph_heavy_ties_stable` for an
+tying -- see `tests/test_coxph.py::test_coxph_heavy_ties_stable` for an
 empirical check.
 
 ### Baseline hazard
@@ -250,7 +258,7 @@ of `exp(beta' x_j)`.
 
 ### Kaplan-Meier + log-rank + c-index
 
-Standard textbook derivations — see `src/coxtcga/km.py` and
+Standard textbook derivations -- see `src/coxtcga/km.py` and
 `src/coxtcga/metrics.py` for line-by-line implementations with math
 annotations in docstrings.
 
@@ -275,22 +283,22 @@ to the reference:
 
 ```
 cox-survival-tcga/
-├── src/coxtcga/
-│   ├── coxph.py         # partial likelihood + Newton-Raphson + Breslow H0
-│   ├── km.py            # Kaplan-Meier + Greenwood CI + log-rank
-│   ├── metrics.py       # Harrell concordance index
-│   ├── download.py      # GDC API client for clinical + RNA-seq
-│   └── pipeline.py      # orchestration: API -> Cox -> KM -> figures
-├── tests/test_coxph.py  # vs lifelines
-├── scripts/run_survival.py
-├── data/
-│   ├── raw/             # GDC responses (gitignored, reproducible)
-│   └── processed/       # design matrices + Cox summaries (committed)
-├── figures/             # KM + forest plots (committed as artifacts)
-├── references/          # curated theses + papers + auto-generated BIBLIOGRAPHY.md
-├── Dockerfile
-├── .github/workflows/ci.yml
-└── pyproject.toml
+??? src/coxtcga/
+?   ??? coxph.py         # partial likelihood + Newton-Raphson + Breslow H0
+?   ??? km.py            # Kaplan-Meier + Greenwood CI + log-rank
+?   ??? metrics.py       # Harrell concordance index
+?   ??? download.py      # GDC API client for clinical + RNA-seq
+?   ??? pipeline.py      # orchestration: API -> Cox -> KM -> figures
+??? tests/test_coxph.py  # vs lifelines
+??? scripts/run_survival.py
+??? data/
+?   ??? raw/             # GDC responses (gitignored, reproducible)
+?   ??? processed/       # design matrices + Cox summaries (committed)
+??? figures/             # KM + forest plots (committed as artifacts)
+??? references/          # curated theses + papers + auto-generated BIBLIOGRAPHY.md
+??? Dockerfile
+??? .github/workflows/ci.yml
+??? pyproject.toml
 ```
 
 ---

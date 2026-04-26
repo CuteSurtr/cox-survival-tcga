@@ -117,7 +117,7 @@ def _render_bibliography(entries_by_section: dict[str, list[dict]]) -> str:
         lines.append(f'## {section.capitalize()}')
         lines.append('')
         if not entries:
-            lines.append('_(none yet — run `python references/fetch.py` to populate)_')
+            lines.append('_(none yet -- run `python references/fetch.py` to populate)_')
             lines.append('')
             continue
         for e in entries:
@@ -134,7 +134,7 @@ def _render_bibliography(entries_by_section: dict[str, list[dict]]) -> str:
                 bits.append(str(year))
             if venue:
                 bits.append(f'*{venue}*')
-            lines.append('- ' + ' — '.join(bits))
+            lines.append('- ' + ' -- '.join(bits))
             if url:
                 lines.append(f'  - source: [{url}]({url})')
             if local:
